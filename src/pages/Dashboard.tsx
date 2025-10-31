@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Zap, Sparkles, Trash2, ArrowLeft } from 'lucide-react';
 import TransactionForm from '../components/TransactionForm';
+import TransactionParser, { ParsedJournalEntry } from '../components/TransactionParser';
 import ReportViewer from '../components/ReportViewer';
 import { supabase, Transaction, AccountingOutput } from '../lib/supabase';
 
@@ -11,8 +12,11 @@ interface DashboardProps {
 export default function Dashboard({ onBack }: DashboardProps) {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [accountingData, setAccountingData] = useState<AccountingOutput | null>(null);
+  const [parsedJournals, setParsedJournals] = useState<ParsedJournalEntry[]>([]);
+  const [parserSummary, setParserSummary] = useState('');
   const [loading, setLoading] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [activeMode, setActiveMode] = useState<'form' | 'parser'>('form');
 
   useEffect(() => {
     loadTransactions();
@@ -146,8 +150,40 @@ export default function Dashboard({ onBack }: DashboardProps) {
           </div>
         </div>
 
+        <div className="mb-6">
+          <div className="flex gap-2 bg-white rounded-lg p-1 w-fit">
+            <button
+              onClick={() => setActiveMode('form')}
+              className={`px-4 py-2 rounded-md font-medium transition-colors ${
+                activeMode === 'form'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              Manual Entry
+            </button>
+            <button
+              onClick={() => setActiveMode('parser')}
+              className={`px-4 py-2 rounded-md font-medium transition-colors ${
+                activeMode === 'parser'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              AI Parser
+            </button>
+          </div>
+        </div>
+
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-          <TransactionForm onTransactionAdded={loadTransactions} />
+          {activeMode === 'form' ? (
+            <TransactionForm onTransactionAdded={loadTransactions} />
+          ) : (
+            <TransactionParser onParsed={(entries, summary) => {
+              setParsedJournals(entries);
+              setParserSummary(summary);
+            }} />
+          )}
 
           <div className="bg-white rounded-xl shadow-md p-6">
             <div className="flex items-center justify-between mb-4">
@@ -201,17 +237,62 @@ export default function Dashboard({ onBack }: DashboardProps) {
         </div>
 
         <div className="mb-6">
-          <button
-            onClick={handleGenerateAccounts}
-            disabled={generating || transactions.length === 0}
-            className="w-full py-4 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl text-lg font-semibold hover:from-blue-700 hover:to-blue-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg hover:shadow-xl flex items-center justify-center gap-3"
-          >
-            <Sparkles size={24} />
-            {generating ? 'Generating Accounts...' : 'Generate Accounting Reports'}
-          </button>
+          {activeMode === 'form' ? (
+            <button
+              onClick={handleGenerateAccounts}
+              disabled={generating || transactions.length === 0}
+              className="w-full py-4 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl text-lg font-semibold hover:from-blue-700 hover:to-blue-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg hover:shadow-xl flex items-center justify-center gap-3"
+            >
+              <Sparkles size={24} />
+              {generating ? 'Generating Accounts...' : 'Generate Accounting Reports'}
+            </button>
+          ) : (
+            parsedJournals.length > 0 && (
+              <div className="bg-white rounded-xl shadow-md p-6">
+                <div className="text-green-600 font-medium mb-2">{parserSummary}</div>
+                <p className="text-sm text-gray-600">
+                  {parsedJournals.length} journal entries parsed and ready for review
+                </p>
+              </div>
+            )
+          )}
         </div>
 
-        <ReportViewer data={accountingData} />
+        {activeMode === 'form' ? (
+          <ReportViewer data={accountingData} />
+        ) : parsedJournals.length > 0 ? (
+          <div className="bg-white rounded-xl shadow-md overflow-hidden">
+            <div className="border-b border-gray-200 bg-gray-50 px-6 py-4">
+              <h2 className="text-xl font-semibold text-gray-800">Parsed Journal Entries</h2>
+            </div>
+            <div className="p-6">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-4 py-2 text-left text-gray-700 font-semibold">Date</th>
+                      <th className="px-4 py-2 text-left text-gray-700 font-semibold">Debit Account</th>
+                      <th className="px-4 py-2 text-left text-gray-700 font-semibold">Credit Account</th>
+                      <th className="px-4 py-2 text-right text-gray-700 font-semibold">Amount</th>
+                      <th className="px-4 py-2 text-left text-gray-700 font-semibold">Narration</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
+                    {parsedJournals.map((entry, idx) => (
+                      <tr key={idx} className="hover:bg-gray-50">
+                        <td className="px-4 py-3 font-medium">{entry.date}</td>
+                        <td className="px-4 py-3">{entry.debitAccount}</td>
+                        <td className="px-4 py-3">{entry.creditAccount}</td>
+                        <td className="px-4 py-3 text-right font-mono">${entry.amount.toLocaleString()}</td>
+                        <td className="px-4 py-3 text-gray-600">{entry.narration}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        ) : null}
       </main>
     </div>
   );
